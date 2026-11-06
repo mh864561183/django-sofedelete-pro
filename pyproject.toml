@@ -7,7 +7,7 @@ name = "django-safedelete-pro"
 version = "2.0.0"
 description = "高性能 Django 软删除增强库：支持按表批量级联软删除/恢复、联合唯一索引友好字段（支持自增ID/雪花ID/UUID）及 Admin 后台集成"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = "BSD-3-Clause"
 authors = [
     {name = "menco"}
@@ -16,17 +16,16 @@ keywords = ["django", "safedelete", "soft-delete", "cascade", "orm", "django-saf
 classifiers = [
     "Environment :: Web Environment",
     "Framework :: Django",
-    "Framework :: Django :: 3.2",
-    "Framework :: Django :: 4.2",
     "Framework :: Django :: 5.0",
     "Framework :: Django :: 5.1",
+    "Framework :: Django :: 5.2",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Topic :: Database",
 ]
 dependencies = [
-    "Django>=2.2",
+    "Django>=5.0",
 ]
 
 [project.urls]
@@ -34,14 +33,14 @@ Homepage = "https://github.com/mh864561183/django-safedelete-pro"
 Repository = "https://github.com/mh864561183/django-safedelete-pro.git"
 
 [tool.setuptools.packages.find]
-include = ["safedelete_pro*"]
-exclude = ["safedelete_pro.tests*"]
+include = ["django_safedelete_pro*"]
+exclude = ["django_safedelete_pro.tests*"]
 
 [tool.setuptools.package-data]
-safedelete_pro = [
+django_safedelete_pro = [
     "py.typed",
-    "templates/safedelete_pro/*.html",
-    "static/safedelete_pro/*.css",
+    "templates/django_safedelete_pro/*.html",
+    "static/django_safedelete_pro/*.css",
     "locale/*/LC_MESSAGES/*.po",
     "locale/*/LC_MESSAGES/*.mo",
 ]

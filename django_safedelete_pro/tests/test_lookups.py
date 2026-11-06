@@ -1,9 +1,9 @@
 from django.db import models
 from django.test import TestCase
 
-from safedelete_pro import SOFT_DELETE
-from safedelete_pro.models import SafeDeleteModel
-from safedelete_pro.tests.models import Article, Author
+from django_safedelete_pro import SOFT_DELETE
+from django_safedelete_pro.models import SafeDeleteModel
+from django_safedelete_pro.tests.models import Article, Author
 
 
 class PressLookup(SafeDeleteModel):

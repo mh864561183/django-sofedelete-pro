@@ -1,7 +1,7 @@
 include LICENSE
 include README.md
-recursive-include safedelete_pro/templates *
-recursive-include safedelete_pro/static *
-recursive-include safedelete_pro/locale *
-include safedelete_pro/py.typed
-recursive-exclude safedelete_pro/tests *
+recursive-include django_safedelete_pro/templates *
+recursive-include django_safedelete_pro/static *
+recursive-include django_safedelete_pro/locale *
+include django_safedelete_pro/py.typed
+recursive-exclude django_safedelete_pro/tests *

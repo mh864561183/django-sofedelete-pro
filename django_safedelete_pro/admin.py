@@ -1,6 +1,3 @@
-from __future__ import unicode_literals
-
-import django
 from django.contrib import admin, messages
 from django.contrib.admin import helpers
 from django.contrib.admin.models import CHANGE, LogEntry
@@ -14,21 +11,15 @@ from django.utils.html import conditional_escape, format_html
 from django.utils.translation import gettext_lazy as _
 
 from .config import FIELD_NAME
-from .utils import related_objects
 from .models import HARD_DELETE
-
-# Django 3.0 compatibility
-try:
-    from django.utils.six import text_type  # type: ignore
-except ImportError:
-    text_type = str
+from .utils import related_objects
 
 
 def highlight_deleted(obj):
     """
         Display in red lines when object is deleted.
     """
-    obj_str = conditional_escape(text_type(obj))
+    obj_str = conditional_escape(str(obj))
     if not getattr(obj, FIELD_NAME, False):
         return obj_str
     else:
@@ -76,8 +67,8 @@ class SafeDeleteAdmin(admin.ModelAdmin):
         ...
         ... ContactAdmin.highlight_deleted_field.short_description = ContactAdmin.field_to_highlight
     """
-    undelete_selected_confirmation_template = "safedelete_pro/undelete_selected_confirmation.html"
-    hard_delete_selected_confirmation_template = "safedelete_pro/hard_delete_selected_confirmation.html"
+    undelete_selected_confirmation_template = "django_safedelete_pro/undelete_selected_confirmation.html"
+    hard_delete_selected_confirmation_template = "django_safedelete_pro/hard_delete_selected_confirmation.html"
 
     list_display = (FIELD_NAME,)
     list_filter = (FIELD_NAME,)
@@ -88,7 +79,7 @@ class SafeDeleteAdmin(admin.ModelAdmin):
 
     class Media:
         css = {
-            'all': ('safedelete_pro/admin.css',),
+            'all': ('django_safedelete_pro/admin.css',),
         }
 
     def queryset(self, request):
@@ -188,19 +179,11 @@ class SafeDeleteAdmin(admin.ModelAdmin):
             'related_list': related_list
         }
 
-        if django.VERSION < (1, 10):
-            return TemplateResponse(
-                request,
-                self.undelete_selected_confirmation_template,
-                context,
-                current_app=self.admin_site.name,
-            )
-        else:
-            return TemplateResponse(
-                request,
-                self.undelete_selected_confirmation_template,
-                context,
-            )
+        return TemplateResponse(
+            request,
+            self.undelete_selected_confirmation_template,
+            context,
+        )
 
     def hard_delete_soft_deleted(self, request, queryset):
         """Admin action to hard delete soft deleted records"""
@@ -268,19 +251,11 @@ class SafeDeleteAdmin(admin.ModelAdmin):
             "related_list": related_list,
         }
 
-        if django.VERSION < (1, 10):
-            return TemplateResponse(
-                request,
-                self.hard_delete_selected_confirmation_template,
-                context,
-                current_app=self.admin_site.name,
-            )
-        else:
-            return TemplateResponse(
-                request,
-                self.hard_delete_selected_confirmation_template,
-                context,
-            )
+        return TemplateResponse(
+            request,
+            self.hard_delete_selected_confirmation_template,
+            context,
+        )
 
     def highlight_deleted_field(self, obj):
         try:
@@ -288,7 +263,7 @@ class SafeDeleteAdmin(admin.ModelAdmin):
         except TypeError:
             raise ValueError("Must set field_to_highlight to your field's name (as a string)")
 
-        field_str = conditional_escape(text_type(field_str))
+        field_str = conditional_escape(str(field_str))
         if not getattr(obj, FIELD_NAME, False):
             return field_str
         else:

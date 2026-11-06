@@ -1,13 +1,13 @@
 from django.db import models
 
-from safedelete_pro import (
+from django_safedelete_pro import (
     DELETED_VISIBLE_BY_PK,
     HARD_DELETE,
     HARD_DELETE_NOCASCADE,
     SOFT_DELETE,
 )
-from safedelete_pro.managers import SafeDeleteManager
-from safedelete_pro.models import SafeDeleteModel
+from django_safedelete_pro.managers import SafeDeleteManager
+from django_safedelete_pro.models import SafeDeleteModel
 
 
 class Author(SafeDeleteModel):

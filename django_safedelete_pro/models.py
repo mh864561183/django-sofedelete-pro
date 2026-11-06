@@ -3,16 +3,17 @@ from collections import Counter, defaultdict
 from functools import reduce
 from itertools import chain
 from operator import or_
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, List, Optional, Tuple
 
-import django
-from django.contrib.admin.utils import NestedObjects
+from asgiref.sync import sync_to_async
 from django.core.exceptions import ValidationError
 from django.db import models, router
-from django.db.models import F, UniqueConstraint
+from django.db.models import F
 from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Cast
 from django.utils import timezone
+
+BATCH_SIZE = 1000
 
 from .config import (
     DELETED_BY_CASCADE_FIELD_NAME,
@@ -30,7 +31,7 @@ from .managers import (
     SafeDeleteManager,
 )
 from .signals import post_softdelete, post_undelete, pre_softdelete
-from .utils import can_hard_delete, related_objects
+from .utils import SafeDeleteCollector, can_hard_delete, related_objects
 
 
 def is_safedelete_cls(cls):
@@ -38,7 +39,7 @@ def is_safedelete_cls(cls):
         # This used to check if it startswith 'safedelete', but that masks
         # the issue inside of a test. Other clients create models that are
         # outside of the safedelete package.
-        if base.__module__.startswith('safedelete_pro.models'):
+        if base.__module__.startswith('django_safedelete_pro.models'):
             return True
         if is_safedelete_cls(base):
             return True
@@ -100,10 +101,11 @@ class SafeDeleteModel(models.Model):
     _safedelete_policy: int = SOFT_DELETE_CASCADE
 
     deleted_at = models.DateTimeField(editable=False, null=True, db_index=True, verbose_name='删除时间')
-    is_deleted = models.CharField(editable=False, default='-1', max_length=36, db_index=True, verbose_name='删除状态')
+    is_deleted = models.CharField(
+        editable=False, default='-1', db_default='-1', max_length=36, db_index=True, verbose_name='删除状态'
+    )
     deleted_by_cascade = models.BooleanField(
-        editable=False, default=False, verbose_name='是否被级联删除',
-        **({'db_default': False} if django.VERSION >= (5, 0) else {})
+        editable=False, default=False, db_default=False, verbose_name='是否被级联删除',
     )
 
     if FIELD_NAME != 'deleted_at':
@@ -154,8 +156,60 @@ class SafeDeleteModel(models.Model):
             using = kwargs.get('using') or router.db_for_write(self.__class__, instance=self)
             post_undelete.send(sender=self.__class__, instance=self, using=using)
 
+    async def asave(self, keep_deleted=False, **kwargs):
+        return await sync_to_async(self.save)(keep_deleted=keep_deleted, **kwargs)
+
+    @classmethod
+    def _get_unique_field_groups(cls) -> List[Tuple[str, ...]]:
+        groups: List[Tuple[str, ...]] = [
+            (f.attname,) for f in cls._meta.fields if f._unique and not f.primary_key  # type: ignore
+        ]
+        for ut in cls._meta.unique_together:
+            groups.append(tuple(cls._meta.get_field(f).attname for f in ut))  # type: ignore
+        for c in cls._meta.total_unique_constraints:
+            if c.fields:
+                groups.append(tuple(cls._meta.get_field(f).attname for f in c.fields))  # type: ignore
+        return groups
+
+    @classmethod
+    def _deduplicate_by_unique_latest(cls, instances: List[models.Model]) -> List[models.Model]:
+        if len(instances) <= 1 or not is_safedelete_cls(cls):
+            return instances
+        groups = cls._get_unique_field_groups()
+        if not groups:
+            return instances
+        sorted_objs = sorted(
+            instances,
+            key=lambda o: (getattr(o, FIELD_NAME) is not None, getattr(o, FIELD_NAME)),
+            reverse=True,
+        )
+        undeleted_overrides = {
+            FIELD_NAME: None,
+            IS_DELETED_FIELD_NAME: '-1',
+            DELETED_BY_CASCADE_FIELD_NAME: False,
+        }
+        seen = set()
+        result = []
+        for obj in sorted_objs:
+            keys = []
+            conflict = False
+            for grp in groups:
+                vals = tuple(undeleted_overrides.get(f, getattr(obj, f, None)) for f in grp)
+                if any(v is None for f, v in zip(grp, vals) if f != FIELD_NAME):
+                    continue
+                key = (grp, vals)
+                if key in seen:
+                    conflict = True
+                    break
+                keys.append(key)
+            if not conflict:
+                seen.update(keys)
+                result.append(obj)
+        return result
+
     @classmethod
     def _bulk_undelete_group(cls, model, instances, using, is_cascade=False, **kwargs) -> Dict[str, int]:
+        instances = model._deduplicate_by_unique_latest(instances)
         if not instances:
             return {}
         has_custom_save = (
@@ -187,7 +241,8 @@ class SafeDeleteModel(models.Model):
             update_fields[DELETED_BY_CASCADE_FIELD_NAME] = False
         if has_is_del:
             update_fields[IS_DELETED_FIELD_NAME] = '-1'
-        model.all_objects.using(using).filter(pk__in=pks).update(**update_fields)
+        for i in range(0, len(pks), BATCH_SIZE):
+            model.all_objects.using(using).filter(pk__in=pks[i:i + BATCH_SIZE]).update(**update_fields)
 
         if send_post:
             for obj in instances:
@@ -202,7 +257,9 @@ class SafeDeleteModel(models.Model):
         using = kwargs.pop('using', None) or router.db_for_write(cls)
         undeleted_counter: Counter = Counter()
 
-        root_deleted = [o for o in objs if getattr(o, FIELD_NAME)]
+        root_deleted = cls._deduplicate_by_unique_latest(
+            [o for o in objs if getattr(o, FIELD_NAME)]
+        )
         if not root_deleted:
             return (0, {})
         undeleted_counter.update(
@@ -238,9 +295,15 @@ class SafeDeleteModel(models.Model):
         assert getattr(self, FIELD_NAME)
         return self._batch_undelete([self], force_policy=force_policy, **kwargs)
 
+    async def aundelete(self, force_policy: Optional[int] = None, **kwargs) -> Tuple[int, Dict[str, int]]:
+        return await sync_to_async(self.undelete)(force_policy=force_policy, **kwargs)
+
     def delete(self, force_policy=None, **kwargs):
         # To know why we need to do that, see https://github.com/makinacorpus/django-safedelete/issues/117
         return self._delete(force_policy, **kwargs)
+
+    async def adelete(self, force_policy=None, **kwargs):
+        return await sync_to_async(self.delete)(force_policy=force_policy, **kwargs)
 
     def _delete(self, force_policy: Optional[int] = None, **kwargs) -> Tuple[int, Dict[str, int]]:
         """Overrides Django's delete behaviour based on the model's delete policy.
@@ -273,6 +336,10 @@ class SafeDeleteModel(models.Model):
         using = kwargs.get('using') or router.db_for_write(self.__class__, instance=self)
         # send pre_softdelete signal
         pre_softdelete.send(sender=self.__class__, instance=self, using=using)
+        if not self._state.adding and 'update_fields' not in kwargs and not pre_softdelete.has_listeners(self.__class__):
+            kwargs['update_fields'] = [
+                f for f in (FIELD_NAME, IS_DELETED_FIELD_NAME, DELETED_BY_CASCADE_FIELD_NAME) if self._has_field(f)
+            ]
         self.save(keep_deleted=True, **kwargs)
         # send softdelete signal
         post_softdelete.send(sender=self.__class__, instance=self, using=using)
@@ -330,7 +397,8 @@ class SafeDeleteModel(models.Model):
             update_fields[IS_DELETED_FIELD_NAME] = Cast(F('pk'), output_field=models.CharField(max_length=36))
         if has_cascade:
             update_fields[DELETED_BY_CASCADE_FIELD_NAME] = True
-        model.all_objects.using(using).filter(pk__in=pks).update(**update_fields)
+        for i in range(0, len(pks), BATCH_SIZE):
+            model.all_objects.using(using).filter(pk__in=pks[i:i + BATCH_SIZE]).update(**update_fields)
 
         if send_post:
             for obj in instances:
@@ -342,7 +410,7 @@ class SafeDeleteModel(models.Model):
         if not objs:
             return (0, {})
         using = kwargs.pop('using', None) or router.db_for_write(cls)
-        collector = NestedObjects(using=using)
+        collector = SafeDeleteCollector(using=using, exclude_deleted=True)
         collector.collect(objs)
         # Soft-delete-cascade raises an exception when trying to delete an object that related object is PROTECT
         protected_objects = defaultdict(list)
@@ -382,34 +450,23 @@ class SafeDeleteModel(models.Model):
         )
 
         # update fields (SET, SET_DEFAULT or SET_NULL)
-        for model, instances_for_fieldvalues in collector.field_updates.items():
-            if django.VERSION >= (4, 2):
-                (field, value) = model
-                instances_list = instances_for_fieldvalues
-                updates = []
-                objs_to_update = []
-                for instances in instances_list:
-                    if isinstance(instances, models.QuerySet) and instances._result_cache is None:
-                        updates.append(instances)
-                    else:
-                        objs_to_update.extend(instances)
-                if updates:
-                    combined_updates = reduce(or_, updates)
-                    combined_updates.update(**{field.name: value})
-                if objs_to_update:
-                    target_model = objs_to_update[0].__class__
-                    query = models.sql.UpdateQuery(target_model)
-                    query.update_batch(
-                        list({obj.pk for obj in objs_to_update}), {field.name: value}, collector.using
-                    )
-            else:
-                for (field, value), instances in instances_for_fieldvalues.items():
-                    query = models.sql.UpdateQuery(model)
-                    query.update_batch(
-                        [obj.pk for obj in instances],
-                        {field.name: value},
-                        collector.using,
-                    )
+        for (field, value), instances_list in collector.field_updates.items():
+            updates = []
+            objs_to_update = []
+            for instances in instances_list:
+                if isinstance(instances, models.QuerySet) and instances._result_cache is None:
+                    updates.append(instances)
+                else:
+                    objs_to_update.extend(instances)
+            if updates:
+                combined_updates = reduce(or_, updates)
+                combined_updates.update(**{field.name: value})
+            if objs_to_update:
+                target_model = objs_to_update[0].__class__
+                query = models.sql.UpdateQuery(target_model)
+                query.update_batch(
+                    list({obj.pk for obj in objs_to_update}), {field.name: value}, collector.using
+                )
 
         return sum(deleted_counter.values()), dict(deleted_counter)
 
@@ -421,20 +478,9 @@ class SafeDeleteModel(models.Model):
         """Checks if one of the fields of this model has a unique constraint set (unique=True).
 
         It also checks if the model has sets of field names that, taken together, must be unique.
-
-        Args:
-            model: Model instance to check
         """
-        if cls._meta.unique_together:
+        if cls._meta.unique_together or cls._meta.total_unique_constraints:
             return True
-
-        if django.VERSION[0] > 3 or (django.VERSION[0] == 3 and django.VERSION[1] >= 1):
-            if cls._meta.total_unique_constraints:
-                return True
-        else:  # derived from total_unique_constraints in django >= 3.1
-            for constraint in cls._meta.constraints:
-                if isinstance(constraint, UniqueConstraint) and constraint.condition is None:
-                    return True
 
         for field in cls._meta.fields:
             if field._unique:  # type: ignore

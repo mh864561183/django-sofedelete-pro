@@ -3,7 +3,7 @@ import string
 
 SECRET_KEY = 'secret'
 
-ROOT_URLCONF = 'safedelete_pro.tests.urls'
+ROOT_URLCONF = 'django_safedelete_pro.tests.urls'
 
 DEBUG = True
 
@@ -38,7 +38,7 @@ INSTALLED_APPS = (
     'django.contrib.sessions',
     'django.contrib.admin',
     'django.contrib.messages',
-    'safedelete_pro',
+    'django_safedelete_pro',
 )
 
 TEMPLATES = [

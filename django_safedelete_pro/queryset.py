@@ -1,6 +1,7 @@
 from collections import Counter
 from typing import Dict, Optional, Tuple, Type, TypeVar
 
+from asgiref.sync import sync_to_async
 from django.db import models
 from django.db.models import query
 
@@ -45,7 +46,7 @@ class SafeDeleteQueryset(query.QuerySet):
         """Overrides bulk delete behaviour with batch SQL optimization.
 
         .. seealso::
-            :py:func:`safedelete_pro.models.SafeDeleteModel.delete`
+            :py:func:`django_safedelete_pro.models.SafeDeleteModel.delete`
         """
         assert self.query.can_filter(), "Cannot use 'limit' or 'offset' with delete."
 
@@ -78,6 +79,10 @@ class SafeDeleteQueryset(query.QuerySet):
             return sum(deleted_counter.values()), dict(deleted_counter)
     delete.alters_data = True  # type: ignore
 
+    async def adelete(self, force_policy: Optional[int] = None) -> Tuple[int, Dict[str, int]]:
+        return await sync_to_async(self.delete)(force_policy=force_policy)
+    adelete.alters_data = True  # type: ignore
+
     def hard_delete_policy_action(self) -> Tuple[int, Dict[str, int]]:
         # Normally hard-delete the objects.
         self.query._filter_visibility()
@@ -87,7 +92,7 @@ class SafeDeleteQueryset(query.QuerySet):
         """Undelete all soft deleted models in bulk.
 
         .. seealso::
-            :py:func:`safedelete_pro.models.SafeDeleteModel.undelete`
+            :py:func:`django_safedelete_pro.models.SafeDeleteModel.undelete`
         """
         assert self.query.can_filter(), "Cannot use 'limit' or 'offset' with undelete."
         if hasattr(self.model, '_batch_undelete'):
@@ -101,6 +106,10 @@ class SafeDeleteQueryset(query.QuerySet):
         self._result_cache = None
         return sum(undeleted_counter.values()), dict(undeleted_counter)
     undelete.alters_data = True  # type: ignore
+
+    async def aundelete(self, force_policy: Optional[int] = None) -> Tuple[int, Dict[str, int]]:
+        return await sync_to_async(self.undelete)(force_policy=force_policy)
+    aundelete.alters_data = True  # type: ignore
 
     def all(self: _QS, force_visibility=None) -> _QS:
         """Override so related managers can also see the deleted models.

@@ -9,11 +9,11 @@ from django.db import models
 from django.db.models import ProtectedError
 from django.test import TestCase
 
-from safedelete_pro import SOFT_DELETE, SOFT_DELETE_CASCADE
-from safedelete_pro.config import DELETED_BY_CASCADE_FIELD_NAME
-from safedelete_pro.models import SafeDeleteModel
-from safedelete_pro.signals import pre_softdelete
-from safedelete_pro.tests.models import Article, Author, Category
+from django_safedelete_pro import SOFT_DELETE, SOFT_DELETE_CASCADE
+from django_safedelete_pro.config import DELETED_BY_CASCADE_FIELD_NAME
+from django_safedelete_pro.models import SafeDeleteModel
+from django_safedelete_pro.signals import pre_softdelete
+from django_safedelete_pro.tests.models import Article, Author, Category
 
 try:
     from unittest.mock import patch
@@ -161,12 +161,12 @@ class SimpleTest(TestCase):
         self.assertEqual(Press.all_objects.count(), 1)
 
         expected_output_dict = {
-            'safedelete_pro.Article': 1,
-            'safedelete_pro.Press': 1,
-            'safedelete_pro.Section': 3,
-            'safedelete_pro.Table': 3,
-            'safedelete_pro.Image': 3,
-            'safedelete_pro.Author': 1,
+            'django_safedelete_pro.Article': 1,
+            'django_safedelete_pro.Press': 1,
+            'django_safedelete_pro.Section': 3,
+            'django_safedelete_pro.Table': 3,
+            'django_safedelete_pro.Image': 3,
+            'django_safedelete_pro.Author': 1,
         }
         self.assertEqual(output, (12, expected_output_dict))
 
@@ -234,8 +234,8 @@ class SimpleTest(TestCase):
         self.articles[0].delete(force_policy=SOFT_DELETE)
         self.assertEqual(self.authors[1].article_set.count(), 1)
 
-        with patch('safedelete_pro.tests.models.Article.delete') as delete_article_mock:
-            delete_article_mock.return_value = (1, {'safedelete_pro.Article': 1})
+        with patch('django_safedelete_pro.tests.models.Article.delete') as delete_article_mock:
+            delete_article_mock.return_value = (1, {'django_safedelete_pro.Article': 1})
             self.authors[1].delete(force_policy=SOFT_DELETE_CASCADE)
 
             # delete_article_mock.assert_called_once doesn't work on py35
@@ -251,11 +251,11 @@ class SimpleTest(TestCase):
         self.assertEqual(Press.objects.count(), 1)
 
         expected_output_dict = {
-            'safedelete_pro.Article': 1,
-            'safedelete_pro.Press': 1,
-            'safedelete_pro.Section': 3,
-            'safedelete_pro.Image': 3,
-            'safedelete_pro.Author': 1,
+            'django_safedelete_pro.Article': 1,
+            'django_safedelete_pro.Press': 1,
+            'django_safedelete_pro.Section': 3,
+            'django_safedelete_pro.Image': 3,
+            'django_safedelete_pro.Author': 1,
         }
         self.assertEqual(output, (9, expected_output_dict))
 

@@ -1,5 +1,6 @@
 from typing import Optional, Tuple, Type
 
+from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.db import models
 
@@ -129,14 +130,21 @@ class SafeDeleteManager(models.Manager):
 
         # Check if one of the model fields contains a unique constraint
         revived_soft_deleted_object = False
-        if self.model.has_unique_fields() or 'pk' in kwargs or self.model._meta.pk.name in kwargs:
-            # Check if object is already soft-deleted
-            deleted_object = self.all_with_deleted().filter(**kwargs).exclude(**{FIELD_NAME: None}).first()
+        if (
+            self.model.has_unique_fields() or 'pk' in kwargs or self.model._meta.pk.name in kwargs
+        ) and not self.filter(**kwargs).exists():
+            # Pick the most recently soft-deleted object when multiple exist
+            deleted_object = (
+                self.all_with_deleted()
+                .filter(**kwargs)
+                .exclude(**{FIELD_NAME: None})
+                .order_by(f'-{FIELD_NAME}', '-pk')
+                .first()
+            )
 
             # If object is soft-deleted, reset delete-state...
             if deleted_object and deleted_object._safedelete_policy in self.get_soft_delete_policies():
-                setattr(deleted_object, FIELD_NAME, None)
-                deleted_object.save()
+                deleted_object.save(keep_deleted=False)
                 revived_soft_deleted_object = True
 
         # Do the standard logic
@@ -148,6 +156,9 @@ class SafeDeleteManager(models.Manager):
             created = True
 
         return obj, created
+
+    async def aupdate_or_create(self, defaults=None, **kwargs) -> Tuple[models.Model, bool]:
+        return await sync_to_async(self.update_or_create)(defaults=defaults, **kwargs)
 
     @staticmethod
     def get_soft_delete_policies():

@@ -7,9 +7,21 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.test import override_settings
 
-from ..config import SOFT_DELETE, SOFT_DELETE_CASCADE
+from ..config import IS_DELETED_FIELD_NAME, SOFT_DELETE, SOFT_DELETE_CASCADE
 from ..models import SafeDeleteModel
 from .testcase import SafeDeleteForceTestCase
+
+
+class UniqueIsDeletedModel(SafeDeleteModel):
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["name", IS_DELETED_FIELD_NAME],
+                name="unique_name_is_deleted",
+            )
+        ]
 
 
 class SoftDeleteModel(SafeDeleteModel):
@@ -69,9 +81,9 @@ class SoftDeleteTestCase(SafeDeleteForceTestCase):
         """Deprecated: Deleting a SafeDeleteModel model with the soft delete policy should only mask it, not delete it."""
         self.assertSoftDelete(SoftDeleteMixinModel.objects.create())
 
-    @mock.patch('safedelete_pro.models.post_undelete.send')
-    @mock.patch('safedelete_pro.models.post_softdelete.send')
-    @mock.patch('safedelete_pro.models.pre_softdelete.send')
+    @mock.patch('django_safedelete_pro.models.post_undelete.send')
+    @mock.patch('django_safedelete_pro.models.post_softdelete.send')
+    @mock.patch('django_safedelete_pro.models.pre_softdelete.send')
     def test_signals(self, mock_presoftdelete, mock_softdelete, mock_undelete):
         """The soft delete and undelete signals should be sent correctly for soft deleted models."""
         self.instance.delete()
@@ -197,3 +209,32 @@ class SoftDeleteTestCase(SafeDeleteForceTestCase):
         self.assertEqual(obj.name, 'unique-test')
         # Settings flag is active so the revived object should be interpreted as created
         self.assertEqual(created, True)
+
+    def test_undelete_and_update_or_create_restores_latest_when_multiple_deleted(self):
+        first = UniqueIsDeletedModel.objects.create(name='dept')
+        first.delete()
+        second = UniqueIsDeletedModel.objects.create(name='dept')
+        second.delete()
+        self.assertEqual(UniqueIsDeletedModel.deleted_objects.filter(name='dept').count(), 2)
+
+        # Bulk undelete should only restore the most recently deleted one (second)
+        count, _ = UniqueIsDeletedModel.deleted_objects.filter(name='dept').undelete()
+        self.assertEqual(count, 1)
+        self.assertEqual(UniqueIsDeletedModel.objects.get(name='dept').pk, second.pk)
+
+        # Delete second again, then test update_or_create picks second (latest)
+        second.refresh_from_db()
+        second.delete()
+        revived, _ = UniqueIsDeletedModel.objects.update_or_create(name='dept')
+        self.assertEqual(revived.pk, second.pk)
+
+    async def test_async_orm_methods(self):
+        obj, _ = await UniqueIsDeletedModel.objects.aupdate_or_create(name='async-dept')
+        await obj.adelete()
+        self.assertEqual(await UniqueIsDeletedModel.objects.acount(), 0)
+        await obj.aundelete()
+        self.assertEqual(await UniqueIsDeletedModel.objects.acount(), 1)
+        await UniqueIsDeletedModel.objects.filter(pk=obj.pk).adelete()
+        self.assertEqual(await UniqueIsDeletedModel.objects.acount(), 0)
+        await UniqueIsDeletedModel.deleted_objects.filter(pk=obj.pk).aundelete()
+        self.assertEqual(await UniqueIsDeletedModel.objects.acount(), 1)

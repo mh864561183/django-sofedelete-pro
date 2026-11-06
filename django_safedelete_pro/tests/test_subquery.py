@@ -1,7 +1,7 @@
 from django.db import models
 
-from safedelete_pro.models import SafeDeleteModel
-from safedelete_pro.tests.testcase import SafeDeleteTestCase
+from django_safedelete_pro.models import SafeDeleteModel
+from django_safedelete_pro.tests.testcase import SafeDeleteTestCase
 
 
 class Widget(models.Model):
