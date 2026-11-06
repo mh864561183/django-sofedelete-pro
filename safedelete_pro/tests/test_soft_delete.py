@@ -7,14 +7,13 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.test import override_settings
 
-from ..config import SOFT_DELETE_CASCADE
+from ..config import SOFT_DELETE, SOFT_DELETE_CASCADE
 from ..models import SafeDeleteModel
 from .testcase import SafeDeleteForceTestCase
 
 
 class SoftDeleteModel(SafeDeleteModel):
-    # SafeDeleteModel has the soft delete policy by default
-    pass
+    _safedelete_policy = SOFT_DELETE
 
 
 class SoftDeleteRelatedModel(SafeDeleteModel):
@@ -70,9 +69,9 @@ class SoftDeleteTestCase(SafeDeleteForceTestCase):
         """Deprecated: Deleting a SafeDeleteModel model with the soft delete policy should only mask it, not delete it."""
         self.assertSoftDelete(SoftDeleteMixinModel.objects.create())
 
-    @mock.patch('safedelete.models.post_undelete.send')
-    @mock.patch('safedelete.models.post_softdelete.send')
-    @mock.patch('safedelete.models.pre_softdelete.send')
+    @mock.patch('safedelete_pro.models.post_undelete.send')
+    @mock.patch('safedelete_pro.models.post_softdelete.send')
+    @mock.patch('safedelete_pro.models.pre_softdelete.send')
     def test_signals(self, mock_presoftdelete, mock_softdelete, mock_undelete):
         """The soft delete and undelete signals should be sent correctly for soft deleted models."""
         self.instance.delete()

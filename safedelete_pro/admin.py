@@ -12,7 +12,6 @@ from django.template.response import TemplateResponse
 from django.utils.encoding import force_str
 from django.utils.html import conditional_escape, format_html
 from django.utils.translation import gettext_lazy as _
-from pkg_resources import parse_version
 
 from .config import FIELD_NAME
 from .utils import related_objects
@@ -77,8 +76,8 @@ class SafeDeleteAdmin(admin.ModelAdmin):
         ...
         ... ContactAdmin.highlight_deleted_field.short_description = ContactAdmin.field_to_highlight
     """
-    undelete_selected_confirmation_template = "safedelete/undelete_selected_confirmation.html"
-    hard_delete_selected_confirmation_template = "safedelete/hard_delete_selected_confirmation.html"
+    undelete_selected_confirmation_template = "safedelete_pro/undelete_selected_confirmation.html"
+    hard_delete_selected_confirmation_template = "safedelete_pro/hard_delete_selected_confirmation.html"
 
     list_display = (FIELD_NAME,)
     list_filter = (FIELD_NAME,)
@@ -89,7 +88,7 @@ class SafeDeleteAdmin(admin.ModelAdmin):
 
     class Media:
         css = {
-            'all': ('safedelete/admin.css',),
+            'all': ('safedelete_pro/admin.css',),
         }
 
     def queryset(self, request):
@@ -116,13 +115,20 @@ class SafeDeleteAdmin(admin.ModelAdmin):
 
         The default implementation creates an admin LogEntry object.
         """
-        LogEntry.objects.log_action(
-            user_id=request.user.pk,
-            content_type_id=ContentType.objects.get_for_model(self.model).pk,
-            object_id=obj.pk,
-            object_repr=object_repr,
-            action_flag=CHANGE
-        )
+        if hasattr(LogEntry.objects, 'log_actions'):
+            LogEntry.objects.log_actions(
+                user_id=request.user.pk,
+                queryset=[obj],
+                action_flag=CHANGE,
+            )
+        else:
+            LogEntry.objects.log_action(
+                user_id=request.user.pk,
+                content_type_id=ContentType.objects.get_for_model(self.model).pk,
+                object_id=obj.pk,
+                object_repr=object_repr,
+                action_flag=CHANGE
+            )
 
     def undelete_selected(self, request, queryset):
         """ Admin action to undelete objects in bulk with confirmation. """
@@ -182,7 +188,7 @@ class SafeDeleteAdmin(admin.ModelAdmin):
             'related_list': related_list
         }
 
-        if parse_version(django.get_version()) < parse_version('1.10'):
+        if django.VERSION < (1, 10):
             return TemplateResponse(
                 request,
                 self.undelete_selected_confirmation_template,
@@ -262,7 +268,7 @@ class SafeDeleteAdmin(admin.ModelAdmin):
             "related_list": related_list,
         }
 
-        if parse_version(django.get_version()) < parse_version('1.10'):
+        if django.VERSION < (1, 10):
             return TemplateResponse(
                 request,
                 self.hard_delete_selected_confirmation_template,

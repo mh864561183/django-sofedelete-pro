@@ -26,7 +26,7 @@ admin.site.register(Category, CategoryAdmin)
 
 
 class AdminTestCase(TestCase):
-    urls = 'safedelete.tests.urls'
+    urls = 'safedelete_pro.tests.urls'
 
     def setUp(self):
         self.author = Author.objects.create()
@@ -86,20 +86,21 @@ class AdminTestCase(TestCase):
     def test_admin_model(self):
         changelist_default = self.get_changelist(self.request, Category, self.modeladmin_default)
         changelist = self.get_changelist(self.request, Category, self.modeladmin)
-        self.assertEqual(changelist.get_filters(self.request)[0][0].title, FIELD_NAME.replace('_', ' '))
+        expected_title = Category._meta.get_field(FIELD_NAME).verbose_name
+        self.assertEqual(changelist.get_filters(self.request)[0][0].title, expected_title)
         self.assertEqual(changelist.queryset.count(), 3)
         self.assertEqual(changelist_default.queryset.count(), 2)
 
     def test_highlight_deleted(self):
         """Test deleted objects are in red in admin listing."""
-        resp = self.client.get('/admin/safedelete/category/')
+        resp = self.client.get('/admin/safedelete_pro/category/')
         line = '<span class="deleted">{0}</span>'.format(self.categories[1])
         self.assertContains(resp, line)
 
     def test_highlight_deleted_field(self):
         self.modeladmin.field_to_highlight = "name"
         self.modeladmin.list_display = ("highlight_deleted_field",)
-        resp = self.client.get('/admin/safedelete/category/')
+        resp = self.client.get('/admin/safedelete_pro/category/')
         line = '<span class="deleted">{0}</span>'.format(self.categories[1])
         self.assertContains(resp, line)
 
@@ -131,24 +132,24 @@ class AdminTestCase(TestCase):
     def test_admin_xss(self):
         """Test whether admin XSS is blocked."""
         Category.objects.create(name='<script>alert(42)</script>'),
-        resp = self.client.get('/admin/safedelete/category/')
+        resp = self.client.get('/admin/safedelete_pro/category/')
         # It should be escaped
         self.assertNotContains(resp, '<script>alert(42)</script>')
 
     def test_admin_undelete_action(self):
         """Test objects are undeleted and action is logged."""
-        resp = self.client.post('/admin/safedelete/category/', data={
+        resp = self.client.post('/admin/safedelete_pro/category/', data={
             'index': 0,
             'action': ['undelete_selected'],
             '_selected_action': [self.categories[1].pk],
         })
-        self.assertTemplateUsed(resp, 'safedelete/undelete_selected_confirmation.html')
+        self.assertTemplateUsed(resp, 'safedelete_pro/undelete_selected_confirmation.html')
         category = Category.all_objects.get(
             pk=self.categories[1].pk
         )
         self.assertTrue(getattr(self.categories[1], FIELD_NAME))
 
-        resp = self.client.post('/admin/safedelete/category/', data={
+        resp = self.client.post('/admin/safedelete_pro/category/', data={
             'index': 0,
             'action': ['undelete_selected'],
             'post': True,
@@ -161,15 +162,15 @@ class AdminTestCase(TestCase):
 
     def test_admin_hard_delete_soft_deleted_action(self):
         """Test objects are hard deleted and action is logged."""
-        resp = self.client.post('/admin/safedelete/category/', data={
+        resp = self.client.post('/admin/safedelete_pro/category/', data={
             'index': 0,
             'action': ['hard_delete_soft_deleted'],
             '_selected_action': [self.categories[1].pk],
         })
-        self.assertTemplateUsed(resp, 'safedelete/hard_delete_selected_confirmation.html')
+        self.assertTemplateUsed(resp, 'safedelete_pro/hard_delete_selected_confirmation.html')
         self.assertTrue(getattr(self.categories[1], FIELD_NAME))
 
-        resp = self.client.post('/admin/safedelete/category/', data={
+        resp = self.client.post('/admin/safedelete_pro/category/', data={
             'index': 0,
             'action': ['hard_delete_soft_deleted'],
             'post': True,

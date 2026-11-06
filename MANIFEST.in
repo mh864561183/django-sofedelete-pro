@@ -1,0 +1,7 @@
+include LICENSE
+include README.md
+recursive-include safedelete_pro/templates *
+recursive-include safedelete_pro/static *
+recursive-include safedelete_pro/locale *
+include safedelete_pro/py.typed
+recursive-exclude safedelete_pro/tests *
